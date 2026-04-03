@@ -1,0 +1,14 @@
+.aws
+.cache
+.config
+.docker
+.kube
+.ssh
+
+.aws/
+.cache/
+.config/
+.docker/
+.kube/
+.ssh/
+
