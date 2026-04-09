@@ -1,0 +1,116 @@
+Create the EKS cluster with Fargate
+
+
+eksctl create cluster \
+  --name my-cluster \
+  --region us-east-1 \
+  --fargate \
+  --alb-ingress-access
+
+
+now lets  update the cluster
+aws eks update-kubeconfig --region us-east-1 --name my-cluster
+
+Create a Fargate profile for your app namespace
+
+  eksctl create fargateprofile \
+  --cluster my-cluster \
+  --name app-profile \
+  --namespace app \
+  --region us-east-1
+
+  Install the AWS Load Balancer Controller
+
+
+  The ALB controller is what makes the Ingress resource create a real AWS ALB.
+
+# Associate OIDC provider (needed for IAM roles for service accounts)
+eksctl utils associate-iam-oidc-provider \
+  --cluster my-cluster \
+  --region us-east-1 \
+  --approve
+
+
+  # Download the IAM policy
+curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/main/docs/install/iam_policy.json
+
+  
+# Create the IAM policy
+aws iam create-policy \
+  --policy-name AWSLoadBalancerControllerIAMPolicy \
+  --policy-document file://iam_policy.json
+
+  
+# Create the service account (replace 111122223333 with your AWS account ID)
+eksctl create iamserviceaccount \
+  --cluster my-cluster \
+  --namespace kube-system \
+  --name aws-load-balancer-controller \
+  --attach-policy-arn arn:aws:iam::379515516143:policy/AWSLoadBalancerControllerIAMPolicy \
+  --override-existing-serviceaccounts \
+  --approve \
+  --region us-east-1
+
+
+  install helm
+   curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+  helm --version 
+  helm repo update 
+
+
+  helm repo add eks https://aws.github.io/eks-charts
+
+  helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=my-cluster \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller \
+  --set region=us-east-1 \
+  --set vpcId=$(aws eks describe-cluster --name my-cluster --query "cluster.resourcesVpcConfig.vpcId" --output text)
+
+  kubectl apply -f app.yml
+
+
+  kubectl get ingress app-ingress -n app
+
+  kubectl get pods -n app -o wide
+
+  kubectl describe configmap app-config -n app
+
+  kubectl describe ingress app-ingress -n app
+
+  kubectl logs -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller
+
+
+  kubectl get all -n app
+
+  in case of error 
+
+  kubectl rollout restart deployment.apps/about-deployment -n app
+
+
+kubectl rollout status  deployment.apps/about-deployment -n app
+
+
+  now lets delete everything 
+
+  kubectl delete -f app.yml
+
+  Delete the IAM service account
+
+eksctl delete iamserviceaccount \ --cluster my-cluster \ --namespace kube-system \ --name aws-load-balancer-controller \ --region us-east-1
+
+  Delete the Fargate profile
+
+eksctl delete fargateprofile \ --cluster my-cluster \ --name app-profile \ --region us-east-1
+
+  Delete the EKS cluster (this deletes everything inside it too)
+
+
+eksctl delete cluster --name my-cluster --region us-east-1
+
+
+  and you are done!!!
+
+  
