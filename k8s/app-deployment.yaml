@@ -1,125 +1,126 @@
----
+# ── Namespace ────────────────────────────────────────────
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: app-ns
+  name: app
 
 ---
-# HOME PAGE DEPLOYMENT
+# ── ConfigMap (shared env vars for both deployments) ─────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: app
+data:
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+
+---
+# ── Home Deployment ───────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: home-deployment
-  namespace: app-ns
+  namespace: app
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
-      app: home-page
+      app: home
   template:
     metadata:
       labels:
-        app: home-page
+        app: home
     spec:
       containers:
-      - name: home-container
-        image: 379515516143.dkr.ecr.us-east-1.amazonaws.com/eks-repo:home
-        ports:
-        - containerPort: 80
-        resources:
-          requests:
-            cpu: "256m"
-            memory: "512Mi"
-          limits:
-            cpu: "512m"
-            memory: "1Gi"
+        - name: home
+          image: allenaira/microservice:home   # ← your Docker Hub image
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: app-config
 
 ---
+# ── Home Service ──────────────────────────────────────────
 apiVersion: v1
 kind: Service
 metadata:
   name: home-service
-  namespace: app-ns
+  namespace: app
 spec:
   selector:
-    app: home-page
+    app: home
   ports:
-  - port: 80
-    targetPort: 80
-  type: ClusterIP
+    - port: 80
+      targetPort: 80
 
 ---
-# ABOUT PAGE DEPLOYMENT
+# ── About Deployment ──────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: about-deployment
-  namespace: app-ns
+  namespace: app
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
-      app: about-page
+      app: about
   template:
     metadata:
       labels:
-        app: about-page
+        app: about
     spec:
       containers:
-      - name: about-container
-        image: 379515516143.dkr.ecr.us-east-1.amazonaws.com/eks-repo:about
-        ports:
-        - containerPort: 80
-        resources:
-          requests:
-            cpu: "256m"
-            memory: "512Mi"
-          limits:
-            cpu: "512m"
-            memory: "1Gi"
+        - name: about
+          image: allenaira/microservice:about  # ← your Docker Hub image
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: app-config
 
 ---
+# ── About Service ─────────────────────────────────────────
 apiVersion: v1
 kind: Service
 metadata:
   name: about-service
-  namespace: app-ns
+  namespace: app
 spec:
   selector:
-    app: about-page
+    app: about
   ports:
-  - port: 80
-    targetPort: 80
-  type: ClusterIP
+    - port: 80
+      targetPort: 80
 
 ---
-# ALB INGRESS — routes / to home, /about to about
+# ── Ingress (creates an AWS ALB) ──────────────────────────
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: app-ingress
-  namespace: app-ns
+  namespace: app
   annotations:
     kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/target-type: ip          # required for Fargate
 spec:
-  ingressClassName: alb
   rules:
-  - http:
-      paths:
-      - path: /about
-        pathType: Prefix
-        backend:
-          service:
-            name: about-service
-            port:
-              number: 80
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: home-service
-            port:
-              number: 80
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: home-service
+                port:
+                  number: 80
+          - path: /about
+            pathType: Prefix
+            backend:
+              service:
+                name: about-service
+                port:
+                  number: 80
